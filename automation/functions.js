@@ -239,67 +239,31 @@ function delay(sec) {
 }
 
 function mapVariablesToResponse(variables, response) {
-  function getNestedValueFromPath(obj, path) {
-    try {
-      const parts = path.split(/[\.\[\]]/).filter(Boolean);
-      return parts.reduce((acc, part) => {
-        if (acc === undefined || acc === null) return undefined;
-        return isNaN(part) ? acc[part] : acc[parseInt(part)];
-      }, obj);
-    } catch {
-      return undefined;
-    }
+  function getNestedValue(obj, path) {
+    return path.split(".").reduce((acc, part) => acc && acc[part], obj);
   }
 
   const result = {};
 
-  variables.forEach(({ key, value }) => {
-    if (!value || !value.includes("body")) return;
+  // Loop through each variable in the variables array
+  variables.forEach((variable) => {
+    const { key, value } = variable;
 
-    try {
-      if (value.startsWith("body.")) {
-        const path = value.slice(5);
-        const val = getNestedValueFromPath(response.body, path);
-        if (val !== undefined) result[key] = val;
-      } else {
-        // Expression like JSON.stringify(body.items[0])
-        const func = new Function("body", `return ${value}`);
-        result[key] = func(response.body);
+    // Safely access the property in response.body using value (e.g., body.name)
+    if (value && value.startsWith("body.")) {
+      const path = value.slice(5); // Removing 'body.' prefix
+
+      // Use a helper function to safely access nested values
+      const resultValue = getNestedValue(response.body, path);
+
+      if (resultValue !== undefined) {
+        result[key] = resultValue;
       }
-    } catch (e) {
-      // Optional: log errors if needed
     }
   });
 
   return result;
 }
-
-// function mapVariablesToResponse(variables, response) {
-//   function getNestedValue(obj, path) {
-//     return path.split(".").reduce((acc, part) => acc && acc[part], obj);
-//   }
-
-//   const result = {};
-
-//   // Loop through each variable in the variables array
-//   variables.forEach((variable) => {
-//     const { key, value } = variable;
-
-//     // Safely access the property in response.body using value (e.g., body.name)
-//     if (value && value.startsWith("body.")) {
-//       const path = value.slice(5); // Removing 'body.' prefix
-
-//       // Use a helper function to safely access nested values
-//       const resultValue = getNestedValue(response.body, path);
-
-//       if (resultValue !== undefined) {
-//         result[key] = resultValue;
-//       }
-//     }
-//   });
-
-//   return result;
-// }
 
 function addDurationToTimestamp(hours, minutes) {
   // Get the current timestamp
@@ -444,53 +408,33 @@ function timeoutPromise(promise, ms) {
 }
 
 function replaceVariables(input, variables = {}) {
-  if (input === null || input === undefined) return input;
+  // Handle null or undefined input
+  if (input === null || input === undefined) {
+    return input;
+  }
 
+  // Handle strings
   if (typeof input === "string") {
-    return input.replace(/\{\{\{([^{}]+)\}\}\}/g, (match, expression) => {
-      try {
-        // Check if it's a plain path like items[0].name
-        const plainPath = expression.match(/^([a-zA-Z0-9_$\[\]\.]+)$/);
-        if (plainPath) {
-          const parts = expression.split(/[\.\[\]]/).filter(Boolean);
-          let value = variables;
-          for (const part of parts) {
-            if (value === undefined || value === null) return match;
-            if (part in value) {
-              value = value[part];
-            } else if (!isNaN(part)) {
-              value = value[parseInt(part)];
-            } else {
-              return match;
-            }
-          }
-          return value !== undefined ? value : match;
-        } else {
-          // Evaluate full JS expression
-          const func = new Function(
-            ...Object.keys(variables),
-            `return ${expression}`
-          );
-          return func(...Object.values(variables));
-        }
-      } catch (e) {
-        return match; // Fallback to original if error
-      }
+    return input.replace(/\{\{\{([^{}]+)\}\}\}/g, (match, key) => {
+      return variables.hasOwnProperty(key) ? variables[key] : match;
     });
   }
 
+  // Handle arrays
   if (Array.isArray(input)) {
     return input.map((item) => replaceVariables(item, variables));
   }
 
+  // Handle objects
   if (typeof input === "object") {
     const result = {};
-    for (const [k, v] of Object.entries(input)) {
-      result[k] = replaceVariables(v, variables);
+    for (const [key, value] of Object.entries(input)) {
+      result[key] = replaceVariables(value, variables);
     }
     return result;
   }
 
+  // Return primitives as-is
   return input;
 }
 
@@ -530,47 +474,6 @@ async function sendWaMessage({
 
         sendMsgId = send?.key?.id || null;
       }
-    } else if (
-      origin === "webhook_automation" &&
-      node?.data?.webhook?.origin?.code === "QR"
-    ) {
-      const {
-        getSession,
-        formatGroup,
-        formatPhone,
-      } = require("../helper/addon/qr/index");
-
-      const convertMsgToQR = setQrMsgObj(content || node?.data?.content);
-      const session = await timeoutPromise(
-        getSession(node?.data?.webhook?.origin?.data?.uniqueId || "a"),
-        60000
-      );
-      if (!session) {
-        sendMsgId = null;
-      } else {
-        const jid = isGroup
-          ? formatGroup(message.senderMobile)
-          : formatPhone(message.senderMobile);
-
-        // console.log({ jid, convertMsgToQR });
-
-        const send = await timeoutPromise(
-          session?.sendMessage(jid, convertMsgToQR),
-          60000
-        );
-
-        sendMsgId = send?.key?.id || null;
-      }
-    } else if (
-      origin === "webhook_automation" &&
-      node?.data?.webhook?.origin?.code === "META"
-    ) {
-      const send = await sendMetaMsg({
-        msgObj: content || node?.data?.content,
-        to: message.senderMobile,
-        uid,
-      });
-      sendMsgId = send?.id || null;
     } else {
       const send = await sendMetaMsg({
         msgObj: content || node?.data?.content,
@@ -586,7 +489,7 @@ async function sendWaMessage({
   }
 }
 
-async function getActiveFlows({ uid, origin, sessionId, webhook }) {
+async function getActiveFlows({ uid, origin, sessionId }) {
   try {
     const [user] = await query(`SELECT * FROM user WHERE uid = ?`, [uid]);
 
@@ -598,21 +501,12 @@ async function getActiveFlows({ uid, origin, sessionId, webhook }) {
 
     let chatbots = [];
 
-    if (origin?.toLowerCase() === "qr" && sessionId) {
+    if (origin === "qr" && sessionId) {
       chatbots = await query(
         `SELECT * FROM beta_chatbot WHERE uid = ? AND origin_id = ? AND active = ?`,
         [uid, sessionId, 1]
       );
-    } else if (origin?.toLowerCase() === "webhook_automation") {
-      chatbots = await query(
-        `SELECT * FROM beta_chatbot 
-          WHERE origin LIKE '%"webhook_id":"${webhook?.webhook_id}"%'
-          AND uid = ? 
-          AND source = ? 
-          AND active = ?`,
-        [uid, "webhook_automation", 1]
-      );
-    } else if (origin?.toLowerCase() === "meta") {
+    } else {
       chatbots = await query(
         `SELECT * FROM beta_chatbot WHERE uid = ? AND origin_id = ? AND active = ?`,
         [uid, "META", 1]
@@ -626,16 +520,9 @@ async function getActiveFlows({ uid, origin, sessionId, webhook }) {
         chatbots.map(async (element) => {
           const flows = await query(
             `SELECT * FROM beta_flows WHERE uid = ? AND is_active = ? AND source = ? AND flow_id = ?`,
-            [
-              uid,
-              1,
-              origin?.toLowerCase() === "webhook_automation"
-                ? "webhook_automation"
-                : "wa_chatbot",
-              element?.flow_id,
-            ]
+            [uid, 1, "wa_chatbot", element?.flow_id]
           );
-          return flows.map((flow) => ({ ...flow, ...element }));
+          return flows;
         })
       );
 
@@ -656,7 +543,6 @@ async function getFlowSession({
   edges = [],
   sessionId,
   origin,
-  webhookVariables = {},
 }) {
   try {
     if (!message?.senderMobile) return null;
@@ -688,7 +574,6 @@ async function getFlowSession({
               senderMobile: message.senderMobile,
               senderName: message.senderName,
               senderMessage: incomingText,
-              ...webhookVariables,
             },
             node: getNode,
           }),
@@ -710,7 +595,7 @@ async function getFlowSession({
     variablesObj.senderMobile = message.senderMobile;
     variablesObj.senderName = message.senderName;
     variablesObj.senderMessage = incomingText;
-    fData.variables = { ...variablesObj, ...webhookVariables };
+    fData.variables = variablesObj;
 
     const updatingNode = nodes.find((x) => x.id === fData?.node?.id);
 
@@ -1005,7 +890,7 @@ async function processMakeRequest({
         node?.data?.variables || [],
         resp.data
       );
-      allVars = { ...oldVars, ...varFromReq };
+      allVars = { ...varFromReq, ...oldVars };
     } else {
       allVars = flowSession?.data?.variables;
     }
@@ -1470,21 +1355,6 @@ async function processMysqlQuery({
   }
 }
 
-function getNestedValue(path, obj) {
-  if (
-    typeof path !== "string" ||
-    !path ||
-    typeof obj !== "object" ||
-    obj === null
-  ) {
-    return null;
-  }
-
-  return path.split(".").reduce((acc, key) => {
-    return acc && typeof acc === "object" && key in acc ? acc[key] : null;
-  }, obj);
-}
-
 module.exports = {
   extractBodyText,
   getActiveFlows,
@@ -1502,5 +1372,4 @@ module.exports = {
   processAgentTransfer,
   processAiTransfer,
   processMysqlQuery,
-  getNestedValue,
 };

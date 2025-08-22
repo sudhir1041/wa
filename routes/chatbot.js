@@ -268,7 +268,7 @@ router.post("/add_beta_chatbot", validateUser, checkPlan, async (req, res) => {
       }
     }
 
-    const origins = ["QR", "META", "WEBHOOK_AUTOMATION"];
+    const origins = ["QR", "META"];
     if (!origins.includes(origin.code)) {
       return res.json({ msg: "Please select the origin" });
     }
@@ -283,21 +283,13 @@ router.post("/add_beta_chatbot", validateUser, checkPlan, async (req, res) => {
 
     if (chatbots.find((x) => x.code === "META")) {
       return res.json({
-        msg: `A ${
-          origin?.code === "WEBHOOK_AUTOMATION"
-            ? "webhook automation"
-            : "chatbot"
-        } is already running for this device, Please delete that to add new`,
+        msg: "A chatbot is already running for this device, Please delete that to add new",
       });
     }
 
     if (chatbots.find((x) => x.title === origin?.title)) {
       return res.json({
-        msg: `A ${
-          origin?.code === "WEBHOOK_AUTOMATION"
-            ? "webhook automation"
-            : "chatbot"
-        } with this origin already exists for this device`,
+        msg: "A chatbot with this title already exists for this device",
       });
     }
 
@@ -306,12 +298,9 @@ router.post("/add_beta_chatbot", validateUser, checkPlan, async (req, res) => {
     }
 
     await query(
-      `INSERT INTO beta_chatbot (uid, source, title, flow_id, origin, origin_id) VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO beta_chatbot (uid, title, flow_id, origin, origin_id) VALUES (?,?,?,?,?)`,
       [
         req.decode.uid,
-        origin?.code === "WEBHOOK_AUTOMATION"
-          ? "webhook_automation"
-          : "wa_chatbot",
         title,
         flow_id,
         JSON.stringify(origin),

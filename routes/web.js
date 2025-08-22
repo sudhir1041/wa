@@ -17,13 +17,8 @@ const { appVersion, addON } = require("../env.js");
 const bcrypt = require("bcrypt");
 const mysql = require("mysql2/promise");
 const { getAllSocketData } = require("../socket.js");
-const {
-  checkQr,
-  getSession,
-  generateProfilePicture,
-} = require("../helper/addon/qr/index.js");
+const { checkQr } = require("../helper/addon/qr/index.js");
 const { handleIncomingMessage } = require("../automation/automation.js");
-const { checkWebhook } = require("../helper/addon/webhook/index.js");
 
 router.get("/", async (req, res) => {
   try {
@@ -48,14 +43,7 @@ router.get("/get_all", async (req, res) => {
 router.get("/return_module", async (req, res) => {
   try {
     const qrCheck = checkQr();
-    const wooCheck = checkWebhook();
-
-    const finalAddon = [
-      wooCheck && "WEBHOOK",
-      addON?.includes("AI_BOT") && "AI_BOT",
-      qrCheck && "QR",
-    ].filter(Boolean);
-
+    const finalAddon = qrCheck ? [...addON, "QR"] : addON;
     res.json({ success: true, data: finalAddon || [] });
   } catch (err) {
     res.json({ err, msg: "server error" });

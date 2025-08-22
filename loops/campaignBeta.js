@@ -9,7 +9,7 @@ const CONFIG = {
   checkInterval: 5000, // Check every 5 seconds
   maxCampaignsPerCycle: 15, // Process up to 15 campaigns per cycle
   messageDelay: 500, // Reduced delay between messages to 500ms
-  maxRetries: 0, // Maximum retry attempts for failed messages
+  maxRetries: 3, // Maximum retry attempts for failed messages
   fairnessWindow: 10 * 60 * 1000, // 10 minutes window for fairness algorithm
 };
 
@@ -126,156 +126,6 @@ async function processUserCampaigns(uid) {
 /**
  * Process a single campaign
  */
-// async function processSingleCampaign(campaign) {
-//   console.log(`Processing campaign: ${campaign.campaign_id}`);
-
-//   // Skip if scheduled for future
-//   if (campaign.schedule) {
-//     const scheduleTime = new Date(campaign.schedule).getTime();
-//     const now = new Date().getTime();
-//     if (scheduleTime > now) {
-//       console.log(
-//         `Campaign ${campaign.campaign_id} scheduled for future, skipping`
-//       );
-//       return;
-//     }
-//   }
-
-//   // Update status to IN_PROGRESS if it's PENDING
-//   if (campaign.status === "PENDING") {
-//     await query(
-//       "UPDATE beta_campaign SET status = 'IN_PROGRESS' WHERE campaign_id = ?",
-//       [campaign.campaign_id]
-//     );
-//     console.log(
-//       `Campaign ${campaign.campaign_id} status updated to IN_PROGRESS`
-//     );
-//   }
-
-//   // Get all contacts that haven't been processed yet
-//   const contactsToProcess = await query(
-//     `SELECT c.* FROM contact c
-//      LEFT JOIN beta_campaign_logs l ON c.mobile = l.contact_mobile AND l.campaign_id = ?
-//      WHERE c.uid = ? AND c.phonebook_id = ? AND l.id IS NULL
-//      LIMIT ?`,
-//     [
-//       campaign.campaign_id,
-//       campaign.uid,
-//       campaign.phonebook_id,
-//       CONFIG.batchSize,
-//     ]
-//   );
-
-//   // Get pending logs for this campaign
-//   const pendingLogs = await query(
-//     "SELECT * FROM beta_campaign_logs WHERE campaign_id = ? AND status = 'PENDING' LIMIT ?",
-//     [campaign.campaign_id, CONFIG.batchSize]
-//   );
-
-//   // Check if we need to retry failed messages
-//   if (pendingLogs.length === 0 && contactsToProcess.length === 0) {
-//     const failedLogs = await query(
-//       `SELECT * FROM beta_campaign_logs
-//        WHERE campaign_id = ? AND status = 'FAILED'
-//        AND retry_count < ?
-//        LIMIT ?`,
-//       [campaign.campaign_id, CONFIG.maxRetries, CONFIG.batchSize]
-//     );
-
-//     if (failedLogs && failedLogs.length > 0) {
-//       console.log(
-//         `Retrying ${failedLogs.length} failed messages for campaign ${campaign.campaign_id}`
-//       );
-
-//       // Reset failed logs to pending for retry
-//       const failedIds = failedLogs.map((log) => log.id);
-//       await query(
-//         `UPDATE beta_campaign_logs
-//          SET status = 'PENDING',
-//              retry_count = retry_count + 1,
-//              error_message = CONCAT('Retry #', retry_count + 1, ': ', IFNULL(error_message, ''))
-//          WHERE id IN (?)`,
-//         [failedIds]
-//       );
-
-//       // Process these newly pending logs
-//       await processLogsForCampaign(campaign, failedLogs);
-//       return;
-//     }
-//   }
-
-//   // Check if campaign is complete
-//   if (pendingLogs.length === 0 && contactsToProcess.length === 0) {
-//     const [totalLogs] = await query(
-//       "SELECT COUNT(*) as count FROM beta_campaign_logs WHERE campaign_id = ?",
-//       [campaign.campaign_id]
-//     );
-
-//     const [totalContacts] = await query(
-//       "SELECT COUNT(*) as count FROM contact WHERE uid = ? AND phonebook_id = ?",
-//       [campaign.uid, campaign.phonebook_id]
-//     );
-
-//     // Mark as complete if we've processed all contacts or have no more to process
-//     if (
-//       totalLogs.count >= Math.min(campaign.total_contacts, totalContacts.count)
-//     ) {
-//       await query(
-//         "UPDATE beta_campaign SET status = 'COMPLETED' WHERE campaign_id = ?",
-//         [campaign.campaign_id]
-//       );
-//       console.log(
-//         `Campaign ${campaign.campaign_id} marked as COMPLETED - all messages processed`
-//       );
-//       return;
-//     }
-//   }
-
-//   // If we have pending logs, process them first
-//   if (pendingLogs && pendingLogs.length > 0) {
-//     await processLogsForCampaign(campaign, pendingLogs);
-//     return;
-//   }
-
-//   // If we have new contacts, create logs for them
-//   if (contactsToProcess && contactsToProcess.length > 0) {
-//     console.log(
-//       `Creating logs for ${contactsToProcess.length} new contacts in campaign ${campaign.campaign_id}`
-//     );
-
-//     // Batch insert logs for better performance
-//     const values = contactsToProcess.map((contact) => [
-//       campaign.uid,
-//       campaign.campaign_id,
-//       contact.name.replace(/'/g, "''").replace(/\\/g, "\\\\"),
-//       contact.mobile,
-//       "PENDING",
-//     ]);
-
-//     await query(
-//       `INSERT INTO beta_campaign_logs
-//        (uid, campaign_id, contact_name, contact_mobile, status)
-//        VALUES ?`,
-//       [values]
-//     );
-
-//     console.log(
-//       `Created ${contactsToProcess.length} new logs for campaign ${campaign.campaign_id}`
-//     );
-
-//     // Get the newly created logs
-//     const newLogs = await query(
-//       "SELECT * FROM beta_campaign_logs WHERE campaign_id = ? AND status = 'PENDING' LIMIT ?",
-//       [campaign.campaign_id, CONFIG.batchSize]
-//     );
-
-//     // Process the new logs
-//     if (newLogs && newLogs.length > 0) {
-//       await processLogsForCampaign(campaign, newLogs);
-//     }
-//   }
-// }
-
 async function processSingleCampaign(campaign) {
   console.log(`Processing campaign: ${campaign.campaign_id}`);
 
@@ -322,7 +172,37 @@ async function processSingleCampaign(campaign) {
     [campaign.campaign_id, CONFIG.batchSize]
   );
 
-  // REMOVED: The retry logic block that was here
+  // Check if we need to retry failed messages
+  if (pendingLogs.length === 0 && contactsToProcess.length === 0) {
+    const failedLogs = await query(
+      `SELECT * FROM beta_campaign_logs 
+       WHERE campaign_id = ? AND status = 'FAILED' 
+       AND retry_count < ?
+       LIMIT ?`,
+      [campaign.campaign_id, CONFIG.maxRetries, CONFIG.batchSize]
+    );
+
+    if (failedLogs && failedLogs.length > 0) {
+      console.log(
+        `Retrying ${failedLogs.length} failed messages for campaign ${campaign.campaign_id}`
+      );
+
+      // Reset failed logs to pending for retry
+      const failedIds = failedLogs.map((log) => log.id);
+      await query(
+        `UPDATE beta_campaign_logs 
+         SET status = 'PENDING', 
+             retry_count = retry_count + 1,
+             error_message = CONCAT('Retry #', retry_count + 1, ': ', IFNULL(error_message, '')) 
+         WHERE id IN (?)`,
+        [failedIds]
+      );
+
+      // Process these newly pending logs
+      await processLogsForCampaign(campaign, failedLogs);
+      return;
+    }
+  }
 
   // Check if campaign is complete
   if (pendingLogs.length === 0 && contactsToProcess.length === 0) {

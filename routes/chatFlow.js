@@ -132,10 +132,10 @@ router.post("/insert_flow_beta", validateUser, checkPlan, async (req, res) => {
       return res.json({ msg: validation.message });
     }
 
-    const sourceTypes = ["wa_chatbot", "webhook_flow", "webhook_automation"];
+    const sourceTypes = ["wa_chatbot", "webhook_flow"];
 
     if (!sourceTypes.includes(source)) {
-      return res.json({ msg: `Unknown flow source found: ${source}` });
+      return res.json({ msg: "Unknown flow source found" });
     }
 
     if (data?.nodes?.length < 1 || data?.edges?.length < 1) {
@@ -173,17 +173,10 @@ router.get("/get_flows_beta", validateUser, checkPlan, async (req, res) => {
   try {
     const { type } = req.query;
 
-    let data = [];
-    if (type === "all") {
-      data = await query(`SELECT * FROM beta_flows WHERE uid = ?`, [
-        req.decode.uid,
-      ]);
-    } else {
-      data = await query(
-        `SELECT * FROM beta_flows WHERE uid = ? AND source = ?`,
-        [req.decode.uid, type]
-      );
-    }
+    let data = await query(
+      `SELECT * FROM beta_flows WHERE uid = ? AND source = ?`,
+      [req.decode.uid, type]
+    );
     data = data.map((x) => {
       return {
         ...x,

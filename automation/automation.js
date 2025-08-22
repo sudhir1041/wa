@@ -13,7 +13,6 @@ async function processFlow({
   origin,
   chatId,
   element,
-  webhookVariables = {},
 }) {
   let result = { moveToNextNode: false };
   const flowSession = await flowProcessor.getFlowSession({
@@ -25,7 +24,6 @@ async function processFlow({
     edges,
     sessionId,
     origin,
-    webhookVariables,
   });
 
   // returning if chat is disabled
@@ -59,8 +57,7 @@ async function processFlow({
     return;
   }
 
-  console.log("RAN");
-  if (!flowSession?.data?.node && origin !== "webhook_automation") {
+  if (!flowSession?.data?.node) {
     console.log(
       "Flow looks incomplete tryeing to delete session and try again "
     );
@@ -68,11 +65,6 @@ async function processFlow({
       await query(
         `DELETE FROM flow_session WHERE uid = ? AND origin = ? AND origin_id = ? AND flow_id = ? AND sender_mobile = ?`,
         [uid, origin, sessionId, flowId, message.senderMobile]
-      );
-    } else if (origin?.toLowerCase() === "webhook_automation") {
-      await query(
-        `DELETE FROM flow_session WHERE uid = ? AND origin = ? AND flow_id = ? AND sender_mobile = ?`,
-        [uid, origin, flowId, message.senderMobile]
       );
     } else {
       await query(
@@ -386,89 +378,4 @@ async function processAutomation({
   });
 }
 
-async function processWebhookAutomation({ webhook, data, type }) {
-  try {
-    const { uid } = webhook;
-    const userFlows = await flowProcessor.getActiveFlows({
-      uid: webhook?.uid,
-      origin: "webhook_automation",
-      webhook,
-    });
-
-    if (userFlows?.length < 1) {
-      return console.log("User does not have any active automation flow");
-    }
-
-    const originData = userFlows?.origin ? JSON.parse(userFlows?.origin) : {};
-    if (originData?.data?.webhook_id !== webhook?.webhook_id) {
-      return console.log("This was not for this webhook");
-    }
-
-    userFlows.forEach(async (element) => {
-      try {
-        // processing one flow
-        const flowData = JSON.parse(element.data) || {};
-        const nodes = flowData?.nodes || [];
-        const edges = flowData?.edges || [];
-
-        const initialNode = nodes?.find((x) => x.id === "initialNode");
-        if (!initialNode) {
-          return console.log("Initial node not found in webhook hit");
-        }
-
-        const mobileNumberFromPath = flowProcessor.getNestedValue(
-          initialNode?.data?.whPhonePath,
-          data
-        );
-
-        if (!mobileNumberFromPath) {
-          return console.log("No number was passed in the webhook");
-        }
-
-        const message = { senderMobile: mobileNumberFromPath };
-        const { senderMobile } = message;
-
-        if (!senderMobile || !uid) {
-          return console.log("Invalid webhook found", { message, webhook });
-        }
-
-        if (nodes?.length < 1 || edges?.length < 1) {
-          return console.log(
-            "Either nodes or edges length is zero of this automation flow with id:",
-            element.flow_id
-          );
-        }
-
-        const [user] = await query(`SELECT * FROM user WHERE uid = ?`, [uid]);
-
-        if (user) {
-          await processFlow({
-            nodes,
-            edges,
-            uid,
-            flowId: element.flow_id,
-            message,
-            incomingText: "",
-            user,
-            sessionId: "",
-            origin: "webhook_automation",
-            chatId: "",
-            element,
-            webhookVariables: data || {},
-          });
-        }
-
-        await query(
-          `DELETE FROM flow_session WHERE uid = ? AND flow_id = ? AND sender_mobile = ?`,
-          [uid, element.flow_id, message.senderMobile]
-        );
-      } catch (err) {
-        console.log(err);
-      }
-    });
-  } catch (err) {
-    console.log(err);
-  }
-}
-
-module.exports = { processAutomation, processWebhookAutomation };
+module.exports = { processAutomation };

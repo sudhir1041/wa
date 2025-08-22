@@ -458,34 +458,9 @@ router.get("/campaign/:campaignId", validateUser, async (req, res) => {
       [campaignId]
     );
 
-    // Calculate real-time counts
-    const sentCount = stats.reduce((sum, stat) => {
-      return sum + (stat.status === "SENT" ? stat.count : 0);
-    }, 0);
-
-    const deliveredCount = stats.reduce((sum, stat) => {
-      return sum + (stat.delivery_status === "delivered" ? stat.count : 0);
-    }, 0);
-
-    const readCount = stats.reduce((sum, stat) => {
-      return sum + (stat.delivery_status === "read" ? stat.count : 0);
-    }, 0);
-
-    const failedCount = stats
-      .filter(
-        (stat) => stat.delivery_status === "failed" || stat.status === "FAILED"
-      )
-      .reduce((sum, stat) => sum + stat.count, 0);
-
     res.json({
       success: true,
-      campaign: {
-        ...campaign[0],
-        sent_count: sentCount,
-        delivered_count: deliveredCount,
-        read_count: readCount,
-        failed_count: failedCount,
-      },
+      campaign: campaign[0],
       stats,
       logs,
     });
@@ -508,36 +483,17 @@ router.get("/dashboard", validateUser, async (req, res) => {
       [uid]
     );
 
-    // More comprehensive query for message stats from logs
-    const messageStats = await query(
+    // Get total messages - Fixed query
+    const totalMessages = await query(
       `SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN status = 'SENT' THEN 1 END) as sent,
-        COUNT(CASE WHEN delivery_status = 'delivered' THEN 1 END) as delivered,
-        COUNT(CASE WHEN delivery_status = 'read' THEN 1 END) as \`read\`,
-        COUNT(CASE WHEN 
-          status = 'FAILED' OR 
-          delivery_status = 'failed' OR 
-          (error_message IS NOT NULL AND error_message != '') OR
-          status = 'ERROR' OR
-          status != 'SENT' AND status != 'SENT' -- Count anything not sent as potentially failed
-        THEN 1 END) as failed
-      FROM beta_campaign_logs
+        SUM(sent_count) as sent,
+        SUM(delivered_count) as delivered,
+        SUM(read_count) as \`read\`,
+        SUM(failed_count) as failed
+      FROM beta_campaign
       WHERE uid = ?`,
       [uid]
     );
-
-    // console.log("Message stats raw:", messageStats[0]);
-
-    // Format the final message stats - ensure they're all numbers, not strings
-    const finalMessageStats = {
-      sent: parseInt(messageStats[0].sent || 0),
-      delivered: parseInt(messageStats[0].delivered || 0),
-      read: parseInt(messageStats[0].read || 0),
-      failed: parseInt(messageStats[0].failed || 0),
-    };
-
-    // console.log("Final message stats:", finalMessageStats);
 
     // Get campaigns by status
     const campaignsByStatus = await query(
@@ -555,14 +511,7 @@ router.get("/dashboard", validateUser, async (req, res) => {
         COUNT(*) as total_messages,
         SUM(CASE WHEN status = 'SENT' THEN 1 ELSE 0 END) as sent,
         SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN delivery_status = 'read' THEN 1 ELSE 0 END) as \`read\`,
-        SUM(CASE WHEN 
-          status = 'FAILED' OR 
-          delivery_status = 'failed' OR 
-          (error_message IS NOT NULL AND error_message != '') OR
-          status = 'ERROR' OR
-          status != 'SENT'
-        THEN 1 ELSE 0 END) as failed
+        SUM(CASE WHEN delivery_status = 'read' THEN 1 ELSE 0 END) as \`read\`
       FROM beta_campaign_logs
       WHERE uid = ? AND createdAt > DATE_SUB(NOW(), INTERVAL 30 DAY)
       GROUP BY DATE(createdAt)
@@ -570,22 +519,11 @@ router.get("/dashboard", validateUser, async (req, res) => {
       [uid]
     );
 
-    // Get recent campaigns with accurate failed counts from logs
+    // Get recent campaigns - Fixed JOIN
     const recentCampaigns = await query(
       `SELECT 
         c.*,
-        p.name as phonebook_name,
-        (
-          SELECT COUNT(*) 
-          FROM beta_campaign_logs 
-          WHERE campaign_id = c.campaign_id 
-          AND (
-            status = 'FAILED' OR 
-            delivery_status = 'failed' OR 
-            (error_message IS NOT NULL AND error_message != '') OR
-            status = 'ERROR'
-          )
-        ) as calculated_failed_count
+        p.name as phonebook_name
       FROM beta_campaign c
       LEFT JOIN phonebook p ON c.phonebook_id = p.id
       WHERE c.uid = ?
@@ -594,16 +532,10 @@ router.get("/dashboard", validateUser, async (req, res) => {
       [uid]
     );
 
-    // Update the failed_count in each campaign object with the calculated value
-    for (const campaign of recentCampaigns) {
-      campaign.failed_count = parseInt(campaign.calculated_failed_count || 0);
-      delete campaign.calculated_failed_count; // Remove the temporary field
-    }
-
     res.json({
       success: true,
       totalCampaigns: totalCampaigns[0].count,
-      messageStats: finalMessageStats,
+      messageStats: totalMessages[0],
       campaignsByStatus,
       dailyStats,
       recentCampaigns,

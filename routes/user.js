@@ -41,7 +41,6 @@ const fetch = require("node-fetch");
 const jwt = require("jsonwebtoken");
 const { checkQr } = require("../helper/addon/qr/index.js");
 const { addON } = require("../env.js");
-const { checkWebhook } = require("../helper/addon/webhook/index.js");
 
 // facebook login
 router.post("/login_with_facebook", async (req, res) => {
@@ -317,13 +316,7 @@ router.get("/get_me", validateUser, async (req, res) => {
     ]);
 
     const qrCheck = checkQr();
-    const wooCheck = checkWebhook();
-
-    const finalAddon = [
-      wooCheck && "WEBHOOK",
-      addON?.includes("AI_BOT") && "AI_BOT",
-      qrCheck && "QR",
-    ].filter(Boolean);
+    const finalAddon = qrCheck ? [...addON, "QR"] : addON;
 
     // getting phonebook
     const contact = await query(`SELECT * FROM contact WHERE uid = ?`, [

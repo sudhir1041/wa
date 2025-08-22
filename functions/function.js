@@ -2878,7 +2878,7 @@ async function suggestReplyWithGemini(messages, lastMessage, apiKey) {
       "\nGenerate a concise, natural-sounding reply from Support. The reply should be friendly, helpful, and appropriate for a business conversation. Only return the suggested reply without explanations.";
 
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         contents: [
           {
@@ -3118,7 +3118,7 @@ async function translateWithGemini(text, targetLanguage, apiKey) {
 
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         contents: [
           {

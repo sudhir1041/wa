@@ -56,9 +56,6 @@ app.use("/api/qr", qrRoute);
 const aiRoute = require("./routes/ai");
 app.use("/api/ai", aiRoute);
 
-const webhookAutomationRoute = require("./routes/webhook");
-app.use("/api/webhook", webhookAutomationRoute);
-
 const path = require("path");
 const { warmerLoopInit } = require("./helper/addon/qr/warmer/index.js");
 

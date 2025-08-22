@@ -56,9 +56,9 @@ router.post(
           );
           break;
         default:
-          return res.json({
+          return res.status(400).json({
             success: false,
-            msg: "Unsupported AI provider",
+            message: "Unsupported AI provider",
           });
       }
 
@@ -68,9 +68,9 @@ router.post(
       });
     } catch (error) {
       console.error("Translation error:", error);
-      return res.json({
+      return res.status(500).json({
         success: false,
-        msg: error.message || "Translation failed",
+        message: error.message || "Translation failed",
       });
     }
   }
@@ -122,9 +122,9 @@ router.post(
           );
           break;
         default:
-          return res.json({
+          return res.status(400).json({
             success: false,
-            msg: "Unsupported AI provider",
+            message: "Unsupported AI provider",
           });
       }
 
@@ -134,9 +134,9 @@ router.post(
       });
     } catch (error) {
       console.error("Suggestion error:", error);
-      return res.json({
+      return res.status(500).json({
         success: false,
-        msg: error.message || "Failed to generate suggestion",
+        message: error.message || "Failed to generate suggestion",
       });
     }
   }
